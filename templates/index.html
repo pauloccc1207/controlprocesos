@@ -23,12 +23,15 @@
 <body>
     <div class="container">
         <div class="quadrant">
-            <h1>Gaussian Distribution Generator</h1>
+            <h1>Control Estadístico del Proeceso</h1>
             <input type="text" id="dataLabel" placeholder="Enter data label">
             <br>
             <textarea id="dataInput" rows="10" cols="30" placeholder="Enter data values, one per line"></textarea>
             <br>
+            <label for="usl">Especificación Superior:</label>
             <input type="number" id="usl" placeholder="Upper Specification Limit">
+            <br>
+            <label for="lsl">Especificación Inferior:</label>
             <input type="number" id="lsl" placeholder="Lower Specification Limit">
             <br>
             <button onclick="generateGauss()">Generate Gaussian Distribution</button>
@@ -45,6 +48,8 @@
             <p>Kurtosis: <span id="kurtosis"></span></p>
             <p>Cp: <span id="cp"></span></p>
             <p>Cpk: <span id="cpk"></span></p>
+            <p>DPMO: <span id="dpmo"></span></p>
+            <p>Yield: <span id="yield"></span></p>
             <h3>Control Limits</h3>
             <p>1 Std Dev: <span id="control_1_stddev"></span></p>
             <p>2 Std Dev: <span id="control_2_stddev"></span></p>
@@ -54,11 +59,14 @@
             <canvas id="controlChart" width="400" height="200"></canvas>
         </div>
         <div class="quadrant">
-            <canvas id="gaussChart" width="400" height="200"></canvas>
+            <canvas id="histogramChart" width="400" height="200"></canvas>
         </div>
     </div>
 
     <script>
+        let histogramChartInstance = null;
+        let controlChartInstance = null;
+
         function generateGauss() {
             const dataLabel = document.getElementById('dataLabel').value;
             const dataInput = document.getElementById('dataInput').value;
@@ -90,10 +98,12 @@
                 document.getElementById('kurtosis').innerText = data.kurtosis;
                 document.getElementById('cp').innerText = data.cp !== null ? data.cp : 'N/A';
                 document.getElementById('cpk').innerText = data.cpk !== null ? data.cpk : 'N/A';
+                document.getElementById('dpmo').innerText = data.dpmo !== null ? data.dpmo : 'N/A';
+                document.getElementById('yield').innerText = data.yield !== null ? data.yield.toFixed(2) + '%' : 'N/A';
                 document.getElementById('control_1_stddev').innerText = `(${data.control_limits['1_stddev'][0]}, ${data.control_limits['1_stddev'][1]})`;
                 document.getElementById('control_2_stddev').innerText = `(${data.control_limits['2_stddev'][0]}, ${data.control_limits['2_stddev'][1]})`;
                 document.getElementById('control_3_stddev').innerText = `(${data.control_limits['3_stddev'][0]}, ${data.control_limits['3_stddev'][1]})`;
-                drawGaussChart(data.x, data.y, data.x_standard, data.y_standard, dataLabel);
+                drawHistogramChart(values, dataLabel);
                 drawControlChart(values, data.mean, data.stddev, dataLabel);
             })
             .catch(error => {
@@ -102,32 +112,47 @@
             });
         }
 
-        function drawGaussChart(x, y, x_standard, y_standard, dataLabel) {
-            const ctx = document.getElementById('gaussChart').getContext('2d');
-            new Chart(ctx, {
-                type: 'line',
+        function drawHistogramChart(values, dataLabel) {
+            const ctx = document.getElementById('histogramChart').getContext('2d');
+            if (histogramChartInstance) {
+                histogramChartInstance.destroy();
+            }
+            const bins = Math.ceil(Math.sqrt(values.length));
+            const counts = new Array(bins).fill(0);
+            const min = Math.min(...values);
+            const max = Math.max(...values);
+            const binWidth = (max - min) / bins;
+
+            values.forEach(value => {
+                const binIndex = Math.floor((value - min) / binWidth);
+                counts[binIndex]++;
+            });
+
+            const labels = Array.from({ length: bins }, (_, i) => (min + i * binWidth).toFixed(2));
+
+            histogramChartInstance = new Chart(ctx, {
+                type: 'bar',
                 data: {
-                    labels: x,
-                    datasets: [
-                        {
-                            label: `${dataLabel} - Generated Gaussian`,
-                            data: y,
-                            borderColor: 'blue',
-                            fill: false
-                        },
-                        {
-                            label: `${dataLabel} - Standard Normal Distribution`,
-                            data: y_standard,
-                            borderColor: 'red',
-                            fill: false
-                        }
-                    ]
+                    labels: labels,
+                    datasets: [{
+                        label: `${dataLabel} - Histogram`,
+                        data: counts,
+                        backgroundColor: 'blue'
+                    }]
                 },
                 options: {
                     scales: {
                         x: {
-                            type: 'linear',
-                            position: 'bottom'
+                            title: {
+                                display: true,
+                                text: 'Value'
+                            }
+                        },
+                        y: {
+                            title: {
+                                display: true,
+                                text: 'Frequency'
+                            }
                         }
                     }
                 }
@@ -136,11 +161,14 @@
 
         function drawControlChart(values, mean, stddev, dataLabel) {
             const ctx = document.getElementById('controlChart').getContext('2d');
+            if (controlChartInstance) {
+                controlChartInstance.destroy();
+            }
             const labels = values.map((_, index) => index + 1);
-            const ucl = mean + 3 * stddev;
-            const lcl = mean - 3 * stddev;
+            const ucl = mean + stddev;
+            const lcl = mean - stddev;
 
-            new Chart(ctx, {
+            controlChartInstance = new Chart(ctx, {
                 type: 'line',
                 data: {
                     labels: labels,
@@ -206,13 +234,19 @@
             document.getElementById('kurtosis').innerText = '';
             document.getElementById('cp').innerText = '';
             document.getElementById('cpk').innerText = '';
+            document.getElementById('dpmo').innerText = '';
+            document.getElementById('yield').innerText = '';
             document.getElementById('control_1_stddev').innerText = '';
             document.getElementById('control_2_stddev').innerText = '';
             document.getElementById('control_3_stddev').innerText = '';
-            const gaussChartCtx = document.getElementById('gaussChart').getContext('2d');
-            gaussChartCtx.clearRect(0, 0, gaussChartCtx.canvas.width, gaussChartCtx.canvas.height);
-            const controlChartCtx = document.getElementById('controlChart').getContext('2d');
-            controlChartCtx.clearRect(0, 0, controlChartCtx.canvas.width, controlChartCtx.canvas.height);
+            if (histogramChartInstance) {
+                histogramChartInstance.destroy();
+                histogramChartInstance = null;
+            }
+            if (controlChartInstance) {
+                controlChartInstance.destroy();
+                controlChartInstance = null;
+            }
         }
 
         function downloadPDF() {
@@ -228,17 +262,19 @@
             doc.text('Kurtosis: ' + document.getElementById('kurtosis').innerText, 10, 70);
             doc.text('Cp: ' + document.getElementById('cp').innerText, 10, 80);
             doc.text('Cpk: ' + document.getElementById('cpk').innerText, 10, 90);
-            doc.text('1 Std Dev: ' + document.getElementById('control_1_stddev').innerText, 10, 100);
-            doc.text('2 Std Dev: ' + document.getElementById('control_2_stddev').innerText, 10, 110);
-            doc.text('3 Std Dev: ' + document.getElementById('control_3_stddev').innerText, 10, 120);
+            doc.text('DPMO: ' + document.getElementById('dpmo').innerText, 10, 100);
+            doc.text('Yield: ' + document.getElementById('yield').innerText, 10, 110);
+            doc.text('1 Std Dev: ' + document.getElementById('control_1_stddev').innerText, 10, 120);
+            doc.text('2 Std Dev: ' + document.getElementById('control_2_stddev').innerText, 10, 130);
+            doc.text('3 Std Dev: ' + document.getElementById('control_3_stddev').innerText, 10, 140);
 
-            const gaussChartCanvas = document.getElementById('gaussChart');
-            const gaussChartImg = gaussChartCanvas.toDataURL('image/png');
-            doc.addImage(gaussChartImg, 'PNG', 10, 130, 180, 90);
+            const histogramChartCanvas = document.getElementById('histogramChart');
+            const histogramChartImg = histogramChartCanvas.toDataURL('image/png');
+            doc.addImage(histogramChartImg, 'PNG', 10, 150, 180, 90);
 
             const controlChartCanvas = document.getElementById('controlChart');
             const controlChartImg = controlChartCanvas.toDataURL('image/png');
-            doc.addImage(controlChartImg, 'PNG', 10, 230, 180, 90);
+            doc.addImage(controlChartImg, 'PNG', 10, 250, 180, 90);
 
             doc.save('charts.pdf');
         }

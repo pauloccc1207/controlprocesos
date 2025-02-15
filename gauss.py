@@ -35,6 +35,12 @@ def generate_gauss():
         else:
             cp = cpk = None
         
+        # Calcular DPMO y yield
+        defects = np.sum((values < lsl) | (values > usl))
+        opportunities = len(values)
+        dpmo = (defects / opportunities) * 1e6 if opportunities > 0 else None
+        yield_val = (1 - (defects / opportunities)) * 100 if opportunities > 0 else None
+        
         # Generar puntos para la distribución
         x = np.linspace(mean - 3 * stddev, mean + 3 * stddev, 100)
         y = norm.pdf(x, mean, stddev)
@@ -60,6 +66,8 @@ def generate_gauss():
             'kurtosis': kurt,
             'cp': cp,
             'cpk': cpk,
+            'dpmo': dpmo,
+            'yield': yield_val,
             'x': x.tolist(), 
             'y': y.tolist(),
             'x_standard': x_standard.tolist(),
