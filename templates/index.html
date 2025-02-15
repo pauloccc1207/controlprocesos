@@ -10,7 +10,7 @@
         .container {
             display: grid;
             grid-template-columns: 1fr 1fr;
-            grid-template-rows: 1fr 1fr;
+            grid-template-rows: 1fr 1fr 1fr;
             gap: 10px;
             height: 100vh;
         }
@@ -23,7 +23,7 @@
 <body>
     <div class="container">
         <div class="quadrant">
-            <h1>Control Estadístico del Proeceso</h1>
+            <h1>Control Estadístico del Proceso</h1>
             <input type="text" id="dataLabel" placeholder="Enter data label">
             <br>
             <textarea id="dataInput" rows="10" cols="30" placeholder="Enter data values, one per line"></textarea>
@@ -61,11 +61,19 @@
         <div class="quadrant">
             <canvas id="histogramChart" width="400" height="200"></canvas>
         </div>
+        <div class="quadrant">
+            <canvas id="rBarChart" width="400" height="200"></canvas>
+        </div>
+        <div class="quadrant">
+            <h2>Additional Quadrant 2</h2>
+            <!-- Add content for the sixth quadrant here -->
+        </div>
     </div>
 
     <script>
         let histogramChartInstance = null;
         let controlChartInstance = null;
+        let rBarChartInstance = null;
 
         function generateGauss() {
             const dataLabel = document.getElementById('dataLabel').value;
@@ -105,6 +113,7 @@
                 document.getElementById('control_3_stddev').innerText = `(${data.control_limits['3_stddev'][0]}, ${data.control_limits['3_stddev'][1]})`;
                 drawHistogramChart(values, dataLabel);
                 drawControlChart(values, data.mean, data.stddev, dataLabel);
+                drawRBarChart(values, dataLabel);
             })
             .catch(error => {
                 console.error('Error:', error);
@@ -221,6 +230,79 @@
             });
         }
 
+        function drawRBarChart(values, dataLabel) {
+            const ctx = document.getElementById('rBarChart').getContext('2d');
+            if (rBarChartInstance) {
+                rBarChartInstance.destroy();
+            }
+
+            const subgroupSize = 5;
+            const subgroups = [];
+            for (let i = 0; i < values.length; i += subgroupSize) {
+                subgroups.push(values.slice(i, i + subgroupSize));
+            }
+
+            const rBar = subgroups.map(subgroup => Math.max(...subgroup) - Math.min(...subgroup));
+            const rBarMean = rBar.reduce((a, b) => a + b, 0) / rBar.length;
+
+            const uclR = 2.114 * rBarMean;
+            const lclR = 0;
+
+            const labels = subgroups.map((_, index) => index + 1);
+
+            rBarChartInstance = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [
+                        {
+                            label: `${dataLabel} - R-bar`,
+                            data: rBar,
+                            borderColor: 'purple',
+                            fill: false
+                        },
+                        {
+                            label: 'R Mean',
+                            data: new Array(rBar.length).fill(rBarMean),
+                            borderColor: 'orange',
+                            borderDash: [5, 5],
+                            fill: false
+                        },
+                        {
+                            label: 'UCL (Upper Control Limit) R',
+                            data: new Array(rBar.length).fill(uclR),
+                            borderColor: 'red',
+                            borderDash: [5, 5],
+                            fill: false
+                        },
+                        {
+                            label: 'LCL (Lower Control Limit) R',
+                            data: new Array(rBar.length).fill(lclR),
+                            borderColor: 'red',
+                            borderDash: [5, 5],
+                            fill: false
+                        }
+                    ]
+                },
+                options: {
+                    scales: {
+                        x: {
+                            title: {
+                                display: true,
+                                text: 'Subgroup'
+                            }
+                        },
+                        y: {
+                            title: {
+                                display: true,
+                                text: 'Range'
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
         function resetForm() {
             document.getElementById('dataLabel').value = '';
             document.getElementById('dataInput').value = '';
@@ -246,6 +328,10 @@
             if (controlChartInstance) {
                 controlChartInstance.destroy();
                 controlChartInstance = null;
+            }
+            if (rBarChartInstance) {
+                rBarChartInstance.destroy();
+                rBarChartInstance = null;
             }
         }
 
@@ -275,6 +361,10 @@
             const controlChartCanvas = document.getElementById('controlChart');
             const controlChartImg = controlChartCanvas.toDataURL('image/png');
             doc.addImage(controlChartImg, 'PNG', 10, 250, 180, 90);
+
+            const rBarChartCanvas = document.getElementById('rBarChart');
+            const rBarChartImg = rBarChartCanvas.toDataURL('image/png');
+            doc.addImage(rBarChartImg, 'PNG', 10, 350, 180, 90);
 
             doc.save('charts.pdf');
         }
