@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gaussian Distribution</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.4.0/jspdf.umd.min.js"></script>
+    <style>
+        .container {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            grid-template-rows: 1fr 1fr;
+            gap: 10px;
+            height: 100vh;
+        }
+        .quadrant {
+            border: 1px solid #ccc;
+            padding: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="quadrant">
+            <h1>Gaussian Distribution Generator</h1>
+            <input type="text" id="dataLabel" placeholder="Enter data label">
+            <br>
+            <textarea id="dataInput" rows="10" cols="30" placeholder="Enter data values, one per line"></textarea>
+            <br>
+            <input type="number" id="usl" placeholder="Upper Specification Limit">
+            <input type="number" id="lsl" placeholder="Lower Specification Limit">
+            <br>
+            <button onclick="generateGauss()">Generate Gaussian Distribution</button>
+            <button onclick="resetForm()">Reset</button>
+            <button onclick="downloadPDF()">Download PDF</button>
+        </div>
+        <div class="quadrant">
+            <h2>Results</h2>
+            <p>Mean: <span id="mean"></span></p>
+            <p>Standard Deviation: <span id="stddev"></span></p>
+            <p>Range: <span id="range"></span></p>
+            <p>Mode: <span id="mode"></span></p>
+            <p>Skewness: <span id="skewness"></span></p>
+            <p>Kurtosis: <span id="kurtosis"></span></p>
+            <p>Cp: <span id="cp"></span></p>
+            <p>Cpk: <span id="cpk"></span></p>
+            <h3>Control Limits</h3>
+            <p>1 Std Dev: <span id="control_1_stddev"></span></p>
+            <p>2 Std Dev: <span id="control_2_stddev"></span></p>
+            <p>3 Std Dev: <span id="control_3_stddev"></span></p>
+        </div>
+        <div class="quadrant">
+            <canvas id="controlChart" width="400" height="200"></canvas>
+        </div>
+        <div class="quadrant">
+            <canvas id="gaussChart" width="400" height="200"></canvas>
+        </div>
+    </div>
+
+    <script>
+        function generateGauss() {
+            const dataLabel = document.getElementById('dataLabel').value;
+            const dataInput = document.getElementById('dataInput').value;
+            const values = dataInput.split('\n').map(Number).filter(val => !isNaN(val));
+            const usl = document.getElementById('usl').value;
+            const lsl = document.getElementById('lsl').value;
+
+            console.log('Sending data:', { values: values, usl: usl ? parseFloat(usl) : null, lsl: lsl ? parseFloat(lsl) : null });
+            
+            fetch('/generate_gauss', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ values: values, usl: usl ? parseFloat(usl) : null, lsl: lsl ? parseFloat(lsl) : null })
+            })
+            .then(response => response.json())
+            .then(data => {
+                console.log('Received data:', data);
+                if (data.error) {
+                    alert('Error: ' + data.error);
+                    return;
+                }
+                document.getElementById('mean').innerText = data.mean;
+                document.getElementById('stddev').innerText = data.stddev;
+                document.getElementById('range').innerText = data.range;
+                document.getElementById('mode').innerText = data.mode;
+                document.getElementById('skewness').innerText = data.skewness;
+                document.getElementById('kurtosis').innerText = data.kurtosis;
+                document.getElementById('cp').innerText = data.cp !== null ? data.cp : 'N/A';
+                document.getElementById('cpk').innerText = data.cpk !== null ? data.cpk : 'N/A';
+                document.getElementById('control_1_stddev').innerText = `(${data.control_limits['1_stddev'][0]}, ${data.control_limits['1_stddev'][1]})`;
+                document.getElementById('control_2_stddev').innerText = `(${data.control_limits['2_stddev'][0]}, ${data.control_limits['2_stddev'][1]})`;
+                document.getElementById('control_3_stddev').innerText = `(${data.control_limits['3_stddev'][0]}, ${data.control_limits['3_stddev'][1]})`;
+                drawGaussChart(data.x, data.y, data.x_standard, data.y_standard, dataLabel);
+                drawControlChart(values, data.mean, data.stddev, dataLabel);
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('An error occurred while generating the Gaussian distribution. Please check the console for more details.');
+            });
+        }
+
+        function drawGaussChart(x, y, x_standard, y_standard, dataLabel) {
+            const ctx = document.getElementById('gaussChart').getContext('2d');
+            new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: x,
+                    datasets: [
+                        {
+                            label: `${dataLabel} - Generated Gaussian`,
+                            data: y,
+                            borderColor: 'blue',
+                            fill: false
+                        },
+                        {
+                            label: `${dataLabel} - Standard Normal Distribution`,
+                            data: y_standard,
+                            borderColor: 'red',
+                            fill: false
+                        }
+                    ]
+                },
+                options: {
+                    scales: {
+                        x: {
+                            type: 'linear',
+                            position: 'bottom'
+                        }
+                    }
+                }
+            });
+        }
+
+        function drawControlChart(values, mean, stddev, dataLabel) {
+            const ctx = document.getElementById('controlChart').getContext('2d');
+            const labels = values.map((_, index) => index + 1);
+            const ucl = mean + 3 * stddev;
+            const lcl = mean - 3 * stddev;
+
+            new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [
+                        {
+                            label: `${dataLabel} - Values`,
+                            data: values,
+                            borderColor: 'blue',
+                            fill: false
+                        },
+                        {
+                            label: 'Mean',
+                            data: new Array(values.length).fill(mean),
+                            borderColor: 'green',
+                            borderDash: [5, 5],
+                            fill: false
+                        },
+                        {
+                            label: 'UCL (Upper Control Limit)',
+                            data: new Array(values.length).fill(ucl),
+                            borderColor: 'red',
+                            borderDash: [5, 5],
+                            fill: false
+                        },
+                        {
+                            label: 'LCL (Lower Control Limit)',
+                            data: new Array(values.length).fill(lcl),
+                            borderColor: 'red',
+                            borderDash: [5, 5],
+                            fill: false
+                        }
+                    ]
+                },
+                options: {
+                    scales: {
+                        x: {
+                            title: {
+                                display: true,
+                                text: 'Sample'
+                            }
+                        },
+                        y: {
+                            title: {
+                                display: true,
+                                text: 'Value'
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        function resetForm() {
+            document.getElementById('dataLabel').value = '';
+            document.getElementById('dataInput').value = '';
+            document.getElementById('usl').value = '';
+            document.getElementById('lsl').value = '';
+            document.getElementById('mean').innerText = '';
+            document.getElementById('stddev').innerText = '';
+            document.getElementById('range').innerText = '';
+            document.getElementById('mode').innerText = '';
+            document.getElementById('skewness').innerText = '';
+            document.getElementById('kurtosis').innerText = '';
+            document.getElementById('cp').innerText = '';
+            document.getElementById('cpk').innerText = '';
+            document.getElementById('control_1_stddev').innerText = '';
+            document.getElementById('control_2_stddev').innerText = '';
+            document.getElementById('control_3_stddev').innerText = '';
+            const gaussChartCtx = document.getElementById('gaussChart').getContext('2d');
+            gaussChartCtx.clearRect(0, 0, gaussChartCtx.canvas.width, gaussChartCtx.canvas.height);
+            const controlChartCtx = document.getElementById('controlChart').getContext('2d');
+            controlChartCtx.clearRect(0, 0, controlChartCtx.canvas.width, controlChartCtx.canvas.height);
+        }
+
+        function downloadPDF() {
+            const { jsPDF } = window.jspdf;
+            const doc = new jsPDF();
+
+            doc.text('Gaussian Distribution Generator', 10, 10);
+            doc.text('Mean: ' + document.getElementById('mean').innerText, 10, 20);
+            doc.text('Standard Deviation: ' + document.getElementById('stddev').innerText, 10, 30);
+            doc.text('Range: ' + document.getElementById('range').innerText, 10, 40);
+            doc.text('Mode: ' + document.getElementById('mode').innerText, 10, 50);
+            doc.text('Skewness: ' + document.getElementById('skewness').innerText, 10, 60);
+            doc.text('Kurtosis: ' + document.getElementById('kurtosis').innerText, 10, 70);
+            doc.text('Cp: ' + document.getElementById('cp').innerText, 10, 80);
+            doc.text('Cpk: ' + document.getElementById('cpk').innerText, 10, 90);
+            doc.text('1 Std Dev: ' + document.getElementById('control_1_stddev').innerText, 10, 100);
+            doc.text('2 Std Dev: ' + document.getElementById('control_2_stddev').innerText, 10, 110);
+            doc.text('3 Std Dev: ' + document.getElementById('control_3_stddev').innerText, 10, 120);
+
+            const gaussChartCanvas = document.getElementById('gaussChart');
+            const gaussChartImg = gaussChartCanvas.toDataURL('image/png');
+            doc.addImage(gaussChartImg, 'PNG', 10, 130, 180, 90);
+
+            const controlChartCanvas = document.getElementById('controlChart');
+            const controlChartImg = controlChartCanvas.toDataURL('image/png');
+            doc.addImage(controlChartImg, 'PNG', 10, 230, 180, 90);
+
+            doc.save('charts.pdf');
+        }
+    </script>
+</body>
+</html>
