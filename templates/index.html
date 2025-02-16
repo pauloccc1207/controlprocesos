@@ -24,6 +24,7 @@
     <div class="container">
         <div class="quadrant">
             <h1>Control Estadístico del Proceso</h1>
+            <label for="dataLabel">Ingrese el nombre del campo:</label>
             <input type="text" id="dataLabel" placeholder="Enter data label">
             <br>
             <textarea id="dataInput" rows="10" cols="30" placeholder="Enter data values, one per line"></textarea>
@@ -50,6 +51,7 @@
             <p>Cpk: <span id="cpk"></span></p>
             <p>DPMO: <span id="dpmo"></span></p>
             <p>Yield: <span id="yield"></span></p>
+            <p>% de variación: <span id="new_calculation"></span></p>
             <h3>Control Limits</h3>
             <p>1 Std Dev: <span id="control_1_stddev"></span></p>
             <p>2 Std Dev: <span id="control_2_stddev"></span></p>
@@ -65,8 +67,7 @@
             <canvas id="rBarChart" width="400" height="200"></canvas>
         </div>
         <div class="quadrant">
-            <h2>Additional Quadrant 2</h2>
-            <!-- Add content for the sixth quadrant here -->
+            <canvas id="ogiveChart" width="400" height="200"></canvas>
         </div>
     </div>
 
@@ -74,6 +75,7 @@
         let histogramChartInstance = null;
         let controlChartInstance = null;
         let rBarChartInstance = null;
+        let ogiveChartInstance = null;
 
         function generateGauss() {
             const dataLabel = document.getElementById('dataLabel').value;
@@ -108,12 +110,14 @@
                 document.getElementById('cpk').innerText = data.cpk !== null ? data.cpk : 'N/A';
                 document.getElementById('dpmo').innerText = data.dpmo !== null ? data.dpmo : 'N/A';
                 document.getElementById('yield').innerText = data.yield !== null ? data.yield.toFixed(2) + '%' : 'N/A';
+                document.getElementById('new_calculation').innerText = data.new_calculation !== null ? data.new_calculation.toFixed(2) : 'N/A';
                 document.getElementById('control_1_stddev').innerText = `(${data.control_limits['1_stddev'][0]}, ${data.control_limits['1_stddev'][1]})`;
                 document.getElementById('control_2_stddev').innerText = `(${data.control_limits['2_stddev'][0]}, ${data.control_limits['2_stddev'][1]})`;
                 document.getElementById('control_3_stddev').innerText = `(${data.control_limits['3_stddev'][0]}, ${data.control_limits['3_stddev'][1]})`;
                 drawHistogramChart(values, dataLabel);
                 drawControlChart(values, data.mean, data.stddev, dataLabel);
                 drawRBarChart(values, dataLabel);
+                drawOgiveChart(values, dataLabel);
             })
             .catch(error => {
                 console.error('Error:', error);
@@ -138,11 +142,15 @@
             });
 
             const labels = Array.from({ length: bins }, (_, i) => (min + i * binWidth).toFixed(2));
+            const classMarks = labels.map((label, i) => {
+                const nextLabel = labels[i + 1] || (parseFloat(label) + binWidth).toFixed(2);
+                return `${label} - ${nextLabel}`;
+            });
 
             histogramChartInstance = new Chart(ctx, {
                 type: 'bar',
                 data: {
-                    labels: labels,
+                    labels: classMarks,
                     datasets: [{
                         label: `${dataLabel} - Histogram`,
                         data: counts,
@@ -150,11 +158,17 @@
                     }]
                 },
                 options: {
+                    plugins: {
+                        title: {
+                            display: true,
+                            text: dataLabel
+                        }
+                    },
                     scales: {
                         x: {
                             title: {
                                 display: true,
-                                text: 'Value'
+                                text: 'Class Mark'
                             }
                         },
                         y: {
@@ -212,6 +226,12 @@
                     ]
                 },
                 options: {
+                    plugins: {
+                        title: {
+                            display: true,
+                            text: dataLabel
+                        }
+                    },
                     scales: {
                         x: {
                             title: {
@@ -285,6 +305,12 @@
                     ]
                 },
                 options: {
+                    plugins: {
+                        title: {
+                            display: true,
+                            text: dataLabel
+                        }
+                    },
                     scales: {
                         x: {
                             title: {
@@ -296,6 +322,71 @@
                             title: {
                                 display: true,
                                 text: 'Range'
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        function drawOgiveChart(values, dataLabel) {
+            const ctx = document.getElementById('ogiveChart').getContext('2d');
+            if (ogiveChartInstance) {
+                ogiveChartInstance.destroy();
+            }
+
+            const sortedValues = values.slice().sort((a, b) => a - b);
+            const bins = Math.ceil(Math.sqrt(values.length));
+            const counts = new Array(bins).fill(0);
+            const min = Math.min(...values);
+            const max = Math.max(...values);
+            const binWidth = (max - min) / bins;
+
+            sortedValues.forEach(value => {
+                const binIndex = Math.floor((value - min) / binWidth);
+                counts[binIndex]++;
+            });
+
+            const cumulativeCounts = counts.reduce((acc, count, i) => {
+                acc.push((acc[i - 1] || 0) + count);
+                return acc;
+            }, []);
+
+            const cumulativeRelativeFrequency = cumulativeCounts.map(count => (count / values.length) * 100);
+
+            const labels = Array.from({ length: bins }, (_, i) => (min + i * binWidth).toFixed(2));
+
+            ogiveChartInstance = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: `${dataLabel} - Cumulative Relative Frequency`,
+                        data: cumulativeRelativeFrequency,
+                        borderColor: 'blue',
+                        fill: false
+                    }]
+                },
+                options: {
+                    plugins: {
+                        title: {
+                            display: true,
+                            text: dataLabel
+                        }
+                    },
+                    scales: {
+                        x: {
+                            title: {
+                                display: true,
+                                text: 'Value'
+                            }
+                        },
+                        y: {
+                            title: {
+                                display: true,
+                                text: 'Cumulative Relative Frequency (%)',
+                                min: 0,
+                                max: 100
                             }
                         }
                     }
@@ -318,6 +409,7 @@
             document.getElementById('cpk').innerText = '';
             document.getElementById('dpmo').innerText = '';
             document.getElementById('yield').innerText = '';
+            document.getElementById('new_calculation').innerText = '';
             document.getElementById('control_1_stddev').innerText = '';
             document.getElementById('control_2_stddev').innerText = '';
             document.getElementById('control_3_stddev').innerText = '';
@@ -332,6 +424,10 @@
             if (rBarChartInstance) {
                 rBarChartInstance.destroy();
                 rBarChartInstance = null;
+            }
+            if (ogiveChartInstance) {
+                ogiveChartInstance.destroy();
+                ogiveChartInstance = null;
             }
         }
 
@@ -365,6 +461,10 @@
             const rBarChartCanvas = document.getElementById('rBarChart');
             const rBarChartImg = rBarChartCanvas.toDataURL('image/png');
             doc.addImage(rBarChartImg, 'PNG', 10, 350, 180, 90);
+
+            const ogiveChartCanvas = document.getElementById('ogiveChart');
+            const ogiveChartImg = ogiveChartCanvas.toDataURL('image/png');
+            doc.addImage(ogiveChartImg, 'PNG', 10, 450, 180, 90);
 
             doc.save('charts.pdf');
         }
